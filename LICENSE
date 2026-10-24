@@ -1,0 +1,27 @@
+LuzennaForever Source-Available License
+
+Copyright (c) 2026 Kjetil Valen. All rights reserved.
+
+1. Use. You may download this software and run it, unmodified or with your own
+   changes, for your own personal use in World of Warcraft, free of charge.
+
+2. Reading. You may read the source code and learn from it.
+
+3. Everything else needs a paid license. Without a written license from the
+   copyright holder, and payment of the fee agreed in it, you may not:
+     a. copy, redistribute or republish this software or any part of it, in
+        source or any other form, including in forks, mirrors, addon packs
+        and addon-manager listings (other than the fork GitHub itself makes
+        possible for viewing and for proposing changes back to this repository);
+     b. include this software or any part of it in another project;
+     c. sell, sublicense or otherwise commercialise it.
+
+4. Contributions. If you send changes back to this repository, you grant the
+   copyright holder the right to use them in this software under any terms.
+
+5. No warranty. The software is provided "as is", without warranty of any
+   kind. The copyright holder is not liable for any claim or damages arising
+   from its use.
+
+To ask for a license, open an issue at
+https://github.com/Luzenna/wowaddon-LuzennaForever
