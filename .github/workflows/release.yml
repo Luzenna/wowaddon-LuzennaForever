@@ -1,0 +1,205 @@
+name: Release
+
+# Every push to main that changes the addon becomes a GitHub release with
+# LuzennaForever-<version>.zip attached (a ready-to-extract AddOns folder).
+#
+# Version bump comes from the SUBJECT lines of the pushed commits:
+#   #major (or [major])  -> 2.0.0
+#   #minor (or [minor])  -> 1.1.0
+#   neither              -> 1.0.1
+#
+# Escape hatches, matched in the head commit subject:
+#   #norelease  never release, whatever changed
+#   #release    release even if only docs/CI changed
+#
+# Without #release, pushes that can't change the addon (README, CI config,
+# CLAUDE.md) don't mint a version.
+#
+# With no tags yet, the first release is the SEED_VERSION below, as-is.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  SEED_VERSION: 1.0.0
+
+# One at a time: two quick pushes must not compute the same next version.
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.gate.outputs.release }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether this push warrants a release
+        id: gate
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Subject only, never the body: a body that merely mentions a token
+          # must not trigger it.
+          HEAD_MSG=$(git log -1 --format=%s "$AFTER")
+          echo "head subject: $HEAD_MSG"
+
+          if printf '%s' "$HEAD_MSG" | grep -qiE '(^|[[:space:]])#norelease([[:space:]]|$)'; then
+            echo "#norelease - skipping"; echo "release=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "$EVENT" = "workflow_dispatch" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "manual run, new branch or force push - releasing"; echo "release=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          changed=$(git diff --name-only "$BEFORE" "$AFTER")
+          echo "Changed files:"; printf '%s\n' "$changed" | sed 's/^/  /'
+          # Paths that end up in the zip.
+          if printf '%s\n' "$changed" | grep -qE '\.(lua|toc|xml)$'; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "$HEAD_MSG" | grep -qiE '(^|[[:space:]])#release([[:space:]]|$)'; then
+            echo "#release forces a version"; echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "nothing that ships changed and no #release - skipping"; echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute the next version
+        id: version
+        if: steps.gate.outputs.release == 'true'
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Plain vX.Y.Z tags only; anything with a suffix must not become the base.
+          latest=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+          echo "latest release tag: ${latest:-<none>}"
+
+          if [ -z "$latest" ]; then
+            version="$SEED_VERSION"
+            bump=seed
+          else
+            if [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              msgs=$(git log -1 --format=%s "$AFTER")
+            else
+              msgs=$(git log --format=%s "$BEFORE..$AFTER")
+            fi
+            IFS=. read -r major minor patch <<< "${latest#v}"
+            if printf '%s\n' "$msgs" | grep -qiE '#major|\[major\]'; then
+              major=$((major + 1)); minor=0; patch=0; bump=major
+            elif printf '%s\n' "$msgs" | grep -qiE '#minor|\[minor\]'; then
+              minor=$((minor + 1)); patch=0; bump=minor
+            else
+              patch=$((patch + 1)); bump=patch
+            fi
+            version="$major.$minor.$patch"
+          fi
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "::error::v$version already exists"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "### v$version ($bump)" >> "$GITHUB_STEP_SUMMARY"
+          echo "${latest:-<none>} -> v$version ($bump)"
+
+      - name: Explain a skip
+        if: steps.gate.outputs.release != 'true'
+        run: |
+          echo "No release for this push. Add \`#release\` to a commit subject to force one." >> "$GITHUB_STEP_SUMMARY"
+
+  check:
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # WoW runs Lua 5.1, so check syntax with the same version.
+      - name: Syntax-check the Lua
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lua5.1
+          for f in *.lua; do luac5.1 -p "$f"; done
+
+      - name: Every file in the .toc exists
+        run: |
+          set -euo pipefail
+          while IFS= read -r line; do
+            line=$(printf '%s' "$line" | tr -d '\r')
+            case "$line" in
+              ""|"#"*) continue ;;
+            esac
+            test -f "$line" || { echo "::error::$line is listed in the .toc but missing"; exit 1; }
+          done < LuzennaForever.toc
+
+  package:
+    needs: [version, check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp version
+        run: sed -i -E 's/^## Version:.*/## Version: ${{ needs.version.outputs.version }}/' LuzennaForever.toc
+
+      # The zip holds a LuzennaForever/ folder, so it extracts straight into AddOns.
+      - name: Build the zip
+        run: |
+          set -euo pipefail
+          mkdir -p dist/LuzennaForever
+          cp *.lua LuzennaForever.toc LICENSE README.md dist/LuzennaForever/
+          cd dist
+          zip -r "LuzennaForever-${{ needs.version.outputs.version }}.zip" LuzennaForever
+          sha256sum "LuzennaForever-${{ needs.version.outputs.version }}.zip" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: addon
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+          retention-days: 3
+
+  release:
+    needs: [version, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: addon
+          path: dist
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: LuzennaForever ${{ needs.version.outputs.version }}
+          generate_release_notes: true
+          body: |
+            ## LuzennaForever ${{ needs.version.outputs.version }}
+
+            ### Install
+            Extract `LuzennaForever-${{ needs.version.outputs.version }}.zip` into your `Interface\AddOns` folder so you end up with `AddOns\LuzennaForever`, then restart the game or `/reload`.
+
+            Free for personal use; copying or redistributing needs a paid license (see LICENSE).
+          files: |
+            dist/LuzennaForever-${{ needs.version.outputs.version }}.zip
+            dist/SHA256SUMS.txt
