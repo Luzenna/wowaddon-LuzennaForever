@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: LuzennaForever
+## Notes: Personal quality-of-life: movable one-bag with sort and reverse order, alt inventory tracking in item tooltips and an error log.
+## Author: Kjetil
+## Version: 0.1.0
+## SavedVariables: LuzennaForeverDB
+
+Errors.lua
+Core.lua
+Bags.lua
+Tracker.lua
