@@ -154,7 +154,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Stamp version
-        run: sed -i -E 's/^## Version:.*/## Version: ${{ needs.version.outputs.version }}/' LuzennaForever.toc
+        run: |
+          sed -i -E 's/^## Version:.*/## Version: ${{ needs.version.outputs.version }}/' LuzennaForever.toc
+          grep '^## Version' LuzennaForever.toc
 
       # The zip holds a LuzennaForever/ folder, so it extracts straight into AddOns.
       - name: Build the zip
