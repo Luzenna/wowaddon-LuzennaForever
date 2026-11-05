@@ -285,15 +285,22 @@ function Bags.HookReagent()
     -- The layout itself (UpdateItemSlots) loops over a fixed range of bags 4..0
     -- and acquires one item button per slot: after it has run, the same is done
     -- for the reagent bag, so UpdateItemLayout grids those buttons with the rest.
-    -- (Retail's ContainerFrame.lua does this; checked in Forever's client:
-    -- AcquireNewItemButton and the button's Initialize(bag, slot) both exist.)
+    -- (Retail's ContainerFrame.lua does this: AcquireNewItemButton, then
+    -- Initialize(containerFrame, bagID, slotID) on the button it returns.)
     if type(frame.UpdateItemSlots) == "function" and type(frame.AcquireNewItemButton) == "function" then
         hooksecurefunc(frame, "UpdateItemSlots", function(self)
             if MergeOn() then
                 local size = C_Container.GetContainerNumSlots(REAGENT) or 0
                 for i = 1, size do
                     local button = self:AcquireNewItemButton()
-                    button:Initialize(REAGENT, size - i + 1)
+                    -- Same call as Blizzard's own loop: Initialize(containerFrame, bagID, slotID).
+                    -- A button left half-set-up would break every later refresh, so it is dropped.
+                    if not pcall(button.Initialize, button, self, REAGENT, size - i + 1) then
+                        local items = self.Items
+                        if type(items) == "table" and items[#items] == button then items[#items] = nil end
+                        button:Hide()
+                        break
+                    end
                 end
             end
             Bags.TintReagent()
