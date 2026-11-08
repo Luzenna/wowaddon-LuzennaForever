@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 LuzennaForever is a personal World of Warcraft addon (pure Lua, no build step, no tests, no linter, not a git repo). It lives directly in the game's `Interface/AddOns` folder, so editing a file *is* deploying it. To try a change: `/reload` in game. Check errors with `/luz errors` (the addon's own log) or BugSack.
 
-Slash commands: `/luz` (settings), `/luz sort`, `/luz errors`, `/luz forget <name>` (drop an alt from the tracker).
+Slash commands: `/luz` (settings), `/luz procs` (test the warrior pop-up), `/luz sort`, `/luz errors`, `/luz forget <name>` (drop an alt from the tracker).
 
 ## Architecture
 
-`LuzennaForever.toc` sets load order: `Errors → Core → Bags → Tracker`. Every file starts with `local ADDON_NAME, ns = ...` and exposes its module as `ns.<Module>` (`ns.Errors`, `ns.Bags`, `ns.Tracker`). Modules reach each other only through `ns`, and guard optional ones (`if ns.Bags then ...`).
+`LuzennaForever.toc` sets load order: `Errors → Core → Bags → Tracker → Procs`. Every file starts with `local ADDON_NAME, ns = ...` and exposes its module as `ns.<Module>` (`ns.Errors`, `ns.Bags`, `ns.Tracker`). Modules reach each other only through `ns`, and guard optional ones (`if ns.Bags then ...`).
 
 - **Core.lua** owns the lifecycle and everything shared: `ns.defaults`, the recursive `Merge` of defaults into the `LuzennaForeverDB` SavedVariable, the Settings page (`Settings.RegisterVerticalLayoutCategory`), the minimap button, and the `/luz` dispatcher. Init order matters: on `ADDON_LOADED` it sets `ns.db`, then `Errors.Init`, settings, minimap button; on `PLAYER_LOGIN` it calls `Errors.OnLogin`, `Bags.Init`, `Tracker.Init` (these need the game's UI/bag data to exist).
 - **Adding a setting:** put the default in `ns.defaults` (Core.lua), add a `Checkbox(...)` in `RegisterSettings`. The `Checkbox` helper finds the default by matching the table against `ns.db` sections, so the table passed must be a direct `ns.db.<section>` table.
@@ -22,3 +22,5 @@ Slash commands: `/luz` (settings), `/luz sort`, `/luz errors`, `/luz forget <nam
 
 - Retail "secret values" are handled everywhere game data is read: use the file-local `issecretvalue = issecretvalue or function() return false end` and check before comparing, concatenating, or indexing values from game APIs (see Tracker).
 - Code is commented sparingly, with sentence-style comments explaining *why*; keep new comments in that style. Section dividers are `-----` lines with a title.
+
+- **Procs.lua** (warriors only) polls `C_Spell.IsSpellUsable` every 0.1 s for Overpower and Revenge by spell *name* (so the highest known rank is used). They are only usable after a dodge/parry/block, so usable (or usable but short of rage) is the proc. Aura APIs are not used because auras are hidden in combat. It plays a sound once per rising edge and shows a shift-draggable pop-up while it is up.

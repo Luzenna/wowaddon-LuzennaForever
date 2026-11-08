@@ -8,6 +8,7 @@ ns.defaults = {
     minimap = { angle = 215, hide = false },
     tracker = { tooltip = true, split = true },
     errors = { keep = true, list = {} },
+    procs = { enabled = true, overpower = true, revenge = true, sound = true },        -- point/x/y are added when the pop-up is dragged
 }
 
 local function Merge(into, from)
@@ -65,6 +66,17 @@ local function RegisterSettings()
         "Hover an item to see which of your other characters has it.")
     Checkbox(db.tracker, "split", "Show where (bags, bank, worn)",
         "Adds the per-location split after each character's total.")
+
+    Header("Warrior procs")
+    Checkbox(db.procs, "enabled", "Warn when Overpower or Revenge is usable",
+        "A pop-up in the middle of the screen when the ability lights up. Warriors only. Shift-drag the pop-up to move it.",
+        function() if ns.Procs then ns.Procs.Refresh() end end)
+    Checkbox(db.procs, "overpower", "Overpower", "Warn about Overpower (after the target dodges).")
+    Checkbox(db.procs, "revenge", "Revenge", "Warn about Revenge (after you dodge, parry or block).")
+    Checkbox(db.procs, "sound", "Play a sound", "A raid-warning sound when the pop-up appears.")
+    layout:AddInitializer(CreateSettingsButtonInitializer("Test the pop-up", "Test", function()
+        if ns.Procs then ns.Procs.Test() end
+    end, "Shows the pop-up and plays the sound for a few seconds.", false))
 
     Header("Errors")
     Checkbox(db.errors, "keep", "Keep an error log",
@@ -178,6 +190,8 @@ SlashCmdList.LUZENNAFOREVER = function(msg)
         ns.Tracker.Forget(rest)
     elseif command == "sort" and ns.Bags then
         ns.Bags.Sort()
+    elseif command == "procs" and ns.Procs then
+        ns.Procs.Test()
     elseif command == "errors" then
         ns.Errors.Command(rest)
     else
@@ -201,5 +215,6 @@ events:SetScript("OnEvent", function(self, event, arg1)
         ns.Errors.OnLogin()
         if ns.Bags then ns.Bags.Init() end
         if ns.Tracker then ns.Tracker.Init() end
+        if ns.Procs then ns.Procs.Init() end
     end
 end)
